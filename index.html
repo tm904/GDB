@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <title>Uni-Datenbank SQL Sandbox</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-badge">SQLite WASM</span>
+      <h1>Universitäts-Datenbank <span class="subtitle">SQL Sandbox</span></h1>
+    </div>
+    <div class="topbar-actions">
+      <span id="db-status" class="status-pill loading">Lade Engine…</span>
+      <button id="btn-export-db" class="btn btn-secondary" title="Aktuelle SQLite-Datenbank (.sqlite) herunterladen">
+        ⬇ .sqlite
+      </button>
+      <button id="btn-reset-db" class="btn btn-secondary" title="Datenbank auf Ausgangszustand zurücksetzen">
+        ↺ DB zurücksetzen
+      </button>
+      <button id="btn-theme" class="btn btn-icon" title="Darstellung wechseln (Hell/Dunkel)" aria-label="Theme wechseln">
+        ◐
+      </button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <!-- Left / Top Pane: SQL Editor & Results -->
+    <section class="pane editor-pane">
+      <div class="card editor-card">
+        <div class="card-header">
+          <div class="header-title">
+            <h2>SQL-Abfrage</h2>
+            <span class="hint">Strg + Enter zum Ausführen</span>
+          </div>
+          <div class="editor-controls">
+            <select id="preset-select" class="select-input" aria-label="Beispielabfrage wählen">
+              <option value="">★ Beispiel-Abfragen…</option>
+              <option value="all_prof">1. Alle Professoren (C4)</option>
+              <option value="vorl_prof">2. Vorlesungen mit Professoren-Namen (JOIN)</option>
+              <option value="student_hoeren">3. Welche Vorlesungen hört Carnap?</option>
+              <option value="sws_sum">4. SWS-Summe pro Professor (GROUP BY)</option>
+              <option value="voraussetzungen">5. Direkte Voraussetzungen (Self-JOIN)</option>
+              <option value="pruefungen_detail">6. Prüfungsübersicht mit Namen &amp; Noten</option>
+              <option value="keine_vorl">7. Studenten ohne Vorlesung (NOT EXISTS)</option>
+              <option value="assistenten_boss">8. Assistenten und ihre Professoren</option>
+            </select>
+            <button id="btn-clear" class="btn btn-ghost" title="Editor leeren">Leeren</button>
+            <button id="btn-run" class="btn btn-primary" disabled>▶ Ausführen</button>
+          </div>
+        </div>
+
+        <div class="keyword-bar" aria-label="SQL Bausteine einfügen">
+          <button type="button" class="chip" data-insert="SELECT ">SELECT</button>
+          <button type="button" class="chip" data-insert="FROM ">FROM</button>
+          <button type="button" class="chip" data-insert="WHERE ">WHERE</button>
+          <button type="button" class="chip" data-insert="JOIN  ON ">JOIN</button>
+          <button type="button" class="chip" data-insert="LEFT JOIN  ON ">LEFT JOIN</button>
+          <button type="button" class="chip" data-insert="GROUP BY ">GROUP BY</button>
+          <button type="button" class="chip" data-insert="HAVING ">HAVING</button>
+          <button type="button" class="chip" data-insert="ORDER BY ">ORDER BY</button>
+          <button type="button" class="chip" data-insert="DISTINCT ">DISTINCT</button>
+          <button type="button" class="chip" data-insert="COUNT(*)">COUNT(*)</button>
+        </div>
+
+        <!-- Active Exercise Banner (shown when checking an exercise) -->
+        <div id="active-exercise-banner" class="exercise-banner" hidden>
+          <div class="exercise-banner-text">
+            <strong id="active-exercise-title"></strong>
+            <p id="active-exercise-question"></p>
+          </div>
+          <div class="exercise-banner-actions">
+            <button id="btn-check-exercise" class="btn btn-primary btn-sm">✓ Lösung prüfen</button>
+            <button id="btn-close-exercise" class="btn btn-ghost btn-sm" title="Übungsmodus ausblenden">✕</button>
+          </div>
+        </div>
+
+        <div class="editor-wrapper">
+          <div id="line-numbers" class="line-numbers" aria-hidden="true">1</div>
+          <textarea
+            id="sql-input"
+            class="sql-textarea"
+            spellcheck="false"
+            autocapitalize="off"
+            autocomplete="off"
+            placeholder="Gib hier deine SQL-Abfrage ein, z.B. SELECT * FROM professoren;"
+          >SELECT v.vorlnr, v.titel, v.sws, p.name AS gelesenvon_name
+FROM vorlesungen v
+JOIN professoren p ON v.gelesenvon = p.persnr
+ORDER BY v.vorlnr;</textarea>
+        </div>
+      </div>
+
+      <!-- Result Card -->
+      <div class="card result-card">
+        <div class="card-header">
+          <div class="header-title">
+            <h2>Ergebnis</h2>
+            <span id="result-meta" class="meta-badge">Bereit</span>
+          </div>
+          <div class="result-actions">
+            <button id="btn-export-csv" class="btn btn-ghost btn-sm" hidden title="Ergebnis als CSV herunterladen">⬇ CSV</button>
+          </div>
+        </div>
+        <div id="exercise-feedback" class="exercise-feedback" hidden></div>
+        <div id="result-container" class="result-body">
+          <p class="empty-state">Führe eine SQL-Abfrage aus, um Ergebnisse zu sehen.</p>
+        </div>
+      </div>
+
+      <!-- Query History -->
+      <div class="card history-card">
+        <div class="card-header">
+          <h2>Verlauf</h2>
+          <button id="btn-clear-history" class="btn btn-ghost btn-sm">Verlauf löschen</button>
+        </div>
+        <ul id="history-list" class="history-list">
+          <li class="history-empty">Noch keine Abfragen ausgeführt.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Right / Bottom Pane: Reference Tables, Schema & Exercises -->
+    <section class="pane reference-pane">
+      <div class="card reference-card">
+        <div class="card-header">
+          <div class="header-title">
+            <h2>Datenbank-Bestand</h2>
+            <span class="hint">Klicke auf Tabellen/Spalten zum Einfügen</span>
+          </div>
+          <div class="view-tabs" role="tablist">
+            <button class="tab-btn active" data-tab="tables" role="tab" aria-selected="true">Alle Tabellen (7)</button>
+            <button class="tab-btn" data-tab="schema" role="tab" aria-selected="false">Schema &amp; ER</button>
+            <button class="tab-btn" data-tab="exercises" role="tab" aria-selected="false">Übungen (6)</button>
+          </div>
+        </div>
+
+        <div id="tab-tables" class="tab-content active">
+          <div class="table-filter-bar">
+            <input type="search" id="table-search" class="search-input" placeholder="In Tabellen suchen (z.B. Sokrates, 5001, Ethik)…">
+          </div>
+          <div id="reference-grid" class="reference-grid">
+            <!-- Dynamically populated from live SQLite DB -->
+          </div>
+        </div>
+
+        <div id="tab-schema" class="tab-content" hidden>
+          <div class="schema-container" id="schema-container">
+            <!-- Dynamically populated schema & FK overview -->
+          </div>
+        </div>
+
+        <div id="tab-exercises" class="tab-content" hidden>
+          <div class="exercises-container" id="exercises-container">
+            <!-- Dynamically populated interactive exercises -->
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="sql-wasm.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
